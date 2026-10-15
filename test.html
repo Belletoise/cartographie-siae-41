@@ -1,0 +1,731 @@
+HTML
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cartographie des SIAE - Loir-et-Cher (41)</title>
+  
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  
+  <style>
+    /* Environnement et fond de page CLAIRS */
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: #f8fafc;
+      color: #0f172a;
+    }
+    .container {
+      max-width: 1250px;
+      margin: 0 auto;
+    }
+    .header h2 {
+      margin: 0 0 5px 0;
+      color: #0f172a;
+    }
+    .header p {
+      color: #475569;
+      margin-top: 0;
+      margin-bottom: 20px;
+    }
+
+    /* Disposition en Flexbox : Carte à gauche, Menu à droite */
+    .content-wrapper {
+      display: flex;
+      gap: 20px;
+      height: 720px; /* Hauteur globale */
+    }
+
+    /* Cadre de la carte */
+    #map {
+      flex: 1; /* Prend tout l'espace restant */
+      border-radius: 12px;
+      background-color: #f8fafc;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+      border: 1px solid #e2e8f0;
+    }
+
+    /* Nettoyage du fond par défaut des icônes custom Leaflet */
+    .leaflet-custom-svg-icon {
+      background: none;
+      border: none;
+    }
+
+    /* ANIMATION : Mise en évidence du marqueur sélectionné */
+    .active-marker {
+      z-index: 1000 !important; /* Force le marqueur à passer au-dessus des autres */
+    }
+    .active-marker svg {
+      animation: bounceMarker 0.6s infinite alternate cubic-bezier(0.2, 0.6, 0.4, 1);
+      transform-origin: bottom center;
+    }
+    @keyframes bounceMarker {
+      0% {
+        transform: scale(1) translateY(0);
+        filter: drop-shadow(0px 3px 3px rgba(0,0,0,0.3));
+      }
+      100% {
+        transform: scale(1.15) translateY(-12px);
+        filter: drop-shadow(0px 10px 8px rgba(0,0,0,0.4));
+      }
+    }
+
+    /* Menu latéral droit */
+    #sidebar {
+      width: 320px;
+      background: #ffffff;
+      border-radius: 12px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+      border: 1px solid #e2e8f0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .sidebar-header {
+      background: #f1f5f9;
+      padding: 15px;
+      font-weight: bold;
+      border-bottom: 1px solid #e2e8f0;
+      text-align: center;
+      color: #1e293b;
+    }
+
+    .sidebar-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      overflow-y: auto; /* Permet de scroller s'il y a beaucoup de structures */
+      flex: 1;
+    }
+
+    .structure-item {
+      padding: 12px 15px;
+      border-bottom: 1px solid #f1f5f9;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      transition: background-color 0.2s;
+    }
+
+    .structure-item:hover {
+      background-color: #f8fafc;
+    }
+
+    .structure-item.active {
+      background-color: #e0f2fe;
+      border-left: 4px solid #0ea5e9; /* Liseré bleu pour montrer la sélection */
+    }
+
+    .color-dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+      border: 1px solid #ffffff;
+    }
+
+    .structure-info {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .structure-name {
+      font-weight: 600;
+      font-size: 13px;
+      color: #0f172a;
+    }
+
+    .structure-city {
+      font-size: 11px;
+      color: #64748b;
+    }
+
+    /* Masquer le lien d'attribution Leaflet en bas à droite */
+    .leaflet-control-attribution {
+      display: none !important;
+    }
+
+    /* Style des popups au clic sur la carte */
+    .leaflet-popup-content-wrapper {
+      background: #ffffff;
+      color: #0f172a;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    .leaflet-popup-tip {
+      background: #ffffff;
+    }
+    
+    .popup-zone-texte {
+      max-width: 260px;
+      line-height: 1.4;
+    }
+
+    /* Rendre responsive sur les petits écrans */
+    @media (max-width: 900px) {
+      .content-wrapper {
+        flex-direction: column;
+        height: auto;
+      }
+      #map {
+        height: 500px;
+        flex: none;
+      }
+      #sidebar {
+        width: 100%;
+        max-height: 400px;
+      }
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h2>Cartographie des SIAE - Loir-et-Cher (41)</h2>
+    <p>Sélectionnez une structure dans la liste de droite ou cliquez sur un point de la carte pour visualiser sa zone d'intervention.</p>
+  </div>
+  
+  <div class="content-wrapper">
+    <!-- Conteneur de la carte -->
+    <div id="map"></div>
+    
+    <!-- Menu latéral -->
+    <div id="sidebar">
+      <div class="sidebar-header">Liste des structures</div>
+      <ul class="sidebar-list" id="structure-list">
+        <!-- Les éléments de la liste seront injectés ici par Javascript -->
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  // 1. Initialisation de la carte
+  const map = L.map('map', {
+    center: [47.60, 1.33],
+    zoom: 9,
+    minZoom: 8,
+    maxZoom: 12,
+    attributionControl: false
+  });
+
+  // 2. Style de base (département foncé)
+  const styleBaseFonce = {
+    color: '#475569',
+    weight: 0.6,
+    fillColor: '#1e293b',
+    fillOpacity: 0.95
+  };
+
+  // Couleurs distinctes pour chaque zone d'intervention
+  const stylesStructures = {
+    'ACTA VISTA':             { color: '#0284c7', fillColor: '#38bdf8', fillOpacity: 0.9, weight: 1.5 },  
+    'APHP':                   { color: '#0d9488', fillColor: '#2dd4bf', fillOpacity: 0.85, weight: 1.5 }, 
+    'SNR':                    { color: '#d97706', fillColor: '#fbbf24', fillOpacity: 0.85, weight: 1.5 }, 
+    'EUREKA':                 { color: '#c026d3', fillColor: '#e879f9', fillOpacity: 0.85, weight: 1.5 }, 
+    'RQV':                    { color: '#16a34a', fillColor: '#4ade80', fillOpacity: 0.85, weight: 1.5 }, 
+    'LEDA':                   { color: '#be123c', fillColor: '#fb7185', fillOpacity: 0.85, weight: 1.5 }, 
+    'RQB':                    { color: '#ea580c', fillColor: '#fb923c', fillOpacity: 0.85, weight: 1.5 }, 
+    'RESTOS AI ET ACI':       { color: '#4338ca', fillColor: '#818cf8', fillOpacity: 0.85, weight: 1.5 }, 
+    'ASLD':                   { color: '#65a30d', fillColor: '#a3e635', fillOpacity: 0.85, weight: 1.5 }, 
+    'IDEES INTERIM':          { color: '#2563eb', fillColor: '#60a5fa', fillOpacity: 0.85, weight: 1.5 }, 
+    'BIO SOLIDAIRE':          { color: '#db2777', fillColor: '#f472b6', fillOpacity: 0.85, weight: 1.5 }, 
+    'KAIROS':                 { color: '#6b21a8', fillColor: '#c084fc', fillOpacity: 0.85, weight: 1.5 }, 
+    'AVADE':                  { color: '#0f766e', fillColor: '#14b8a6', fillOpacity: 0.85, weight: 1.5 }, 
+    'ARC41':                  { color: '#9f1239', fillColor: '#e11d48', fillOpacity: 0.85, weight: 1.5 }, 
+    'ECLAIR ET ETHIC ECLAIR': { color: '#059669', fillColor: '#34d399', fillOpacity: 0.85, weight: 1.5 }  
+  };
+
+  // Fonction pour générer une icône SVG (Goutte d'eau/Pin) pour les SIÈGES
+  const createMainSvgIcon = (fillColor, scale = 1) => {
+    const w = 28 * scale;
+    const h = 42 * scale;
+    const svg = `
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 36" width="${w}px" height="${h}px" style="filter: drop-shadow(0px 3px 3px rgba(0,0,0,0.3));">
+        <path fill="${fillColor}" stroke="#ffffff" stroke-width="2" d="M12 2C6.48 2 2 6.48 2 12c0 7.5 10 22 10 22s10-14.5 10-22c0-5.52-4.48-10-10-10z"/>
+        <circle cx="12" cy="12" r="4" fill="#ffffff"/>
+      </svg>`;
+    return L.divIcon({
+      className: 'leaflet-custom-svg-icon',
+      html: svg,
+      iconSize: [w, h],
+      iconAnchor: [w / 2, h], // Pointe au bas
+      popupAnchor: [0, -h + 2], // Décalage pour ouvrir la bulle au-dessus
+      tooltipAnchor: [0, -h + 2]
+    });
+  };
+
+  // Fonction pour générer une icône SVG (Carré arrondi) pour les ANTENNES
+  const createAntenneSvgIcon = (fillColor, scale = 1) => {
+    const w = 22 * scale;
+    const h = 22 * scale;
+    const svg = `
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${w}px" height="${h}px" style="filter: drop-shadow(0px 2px 3px rgba(0,0,0,0.3));">
+        <rect x="2" y="2" width="20" height="20" rx="5" fill="${fillColor}" stroke="#ffffff" stroke-width="2"/>
+        <rect x="9" y="9" width="6" height="6" rx="1" fill="#ffffff"/>
+      </svg>`;
+    return L.divIcon({
+      className: 'leaflet-custom-svg-icon',
+      html: svg,
+      iconSize: [w, h],
+      iconAnchor: [w / 2, h / 2], // Centré
+      popupAnchor: [0, -h / 2], 
+      tooltipAnchor: [0, -h / 2]
+    });
+  };
+
+  // 3. Définition des structures
+  const structures = [
+    { id: 'ACTA VISTA', nom: 'ACTA VISTA', implantation: 'Chambord', lat: 47.616, lng: 1.517, zoneTxt: 'Chambord', antennes: [] },
+    { id: 'APHP', nom: 'APHP', implantation: 'Cormenon', lat: 47.969, lng: 0.894, zoneTxt: 'Rayon de 30 km autour de Cormenon', antennes: [] },
+    { id: 'SNR', nom: 'SNR', implantation: 'Blois', lat: 47.598, lng: 1.332, zoneTxt: 'Tout le département', antennes: [] }, 
+    { id: 'EUREKA', nom: 'EUREKA', implantation: 'Blois', lat: 47.586, lng: 1.332, zoneTxt: 'Agglopolys, Grand Chambord, Val de Cher Controis, Romorantinais et Monestois, Sologne des Rivières, Coeur de Sologne et Sologne des Etangs.', antennes: [{ nom: 'EUREKA - Antenne Romorantin', ville: 'Romorantin-Lanthenay', lat: 47.358, lng: 1.746 }, { nom: 'EUREKA - Antenne Le Controis-en-Sologne', ville: 'Le Controis-en-Sologne', lat: 47.419, lng: 1.428 }] }, 
+    { id: 'RQV', nom: 'RQV', implantation: 'Vendôme', lat: 47.793, lng: 1.050, zoneTxt: 'Territoires Vendômois, Perche et Haut Vendômois, Collines du Perche et certaines communes aux alentours de ces territoires.', antennes: [] }, 
+    { id: 'LEDA', nom: 'LEDA', implantation: 'Pontlevoy', lat: 47.389, lng: 1.253, zoneTxt: 'Val de Cher Controis', antennes: [] },
+    { id: 'RQB', nom: 'RQB', implantation: 'Blois', lat: 47.574, lng: 1.332, zoneTxt: 'Agglopolys', antennes: [] }, 
+    { id: 'RESTOS AI ET ACI', nom: 'RESTOS AI et ACI', implantation: 'Blois', lat: 47.586, lng: 1.314, zoneTxt: 'Agglopolys', antennes: [] }, 
+    { id: 'ASLD', nom: 'ASLD', implantation: 'Blois', lat: 47.586, lng: 1.350, zoneTxt: 'Agglopolys', antennes: [] }, 
+    { id: 'IDEES INTERIM', nom: 'IDEES INTERIM', implantation: 'Blois', lat: 47.595, lng: 1.345, zoneTxt: 'Agglopolys', antennes: [] }, 
+    { id: 'BIO SOLIDAIRE', nom: 'BIO SOLIDAIRE', implantation: 'Blois', lat: 47.577, lng: 1.319, zoneTxt: 'Tout le département', antennes: [] }, 
+    { id: 'KAIROS', nom: 'KAIROS', implantation: 'Montlivault', lat: 47.640, lng: 1.443, zoneTxt: 'Tout le département', antennes: [] },
+    { id: 'AVADE', nom: 'AVADE', implantation: 'Vendôme', lat: 47.793, lng: 1.082, zoneTxt: 'Territoires Vendômois, Perche et Haut Vendômois, Collines du Perche, ainsi que Oucques, Épiais et Viévy-le-Rayé.', antennes: [] }, 
+    { id: 'ARC41', nom: 'ARC41', implantation: 'Vallières-les-Grandes', lat: 47.433, lng: 1.148, zoneTxt: 'Rayon de 50 km autour de Vallières-les-Grandes', antennes: [] },
+    { id: 'ECLAIR ET ETHIC ECLAIR', nom: 'ECLAIR et ETHIC ECLAIR', implantation: 'Blois', lat: 47.577, lng: 1.345, zoneTxt: 'Tout le département sauf Territoires Vendômois, Collines du Perche, Perche et Haut Vendômois, Terres du Val de Loire, Beauce Val de Loire.', antennes: [] } 
+  ];
+
+  // Tri alphabétique des structures pour le menu
+  structures.sort((a, b) => a.nom.localeCompare(b.nom));
+
+  let layerCommunes = null;
+  const listContainer = document.getElementById('structure-list');
+  
+  // Dictionnaire pour stocker les marqueurs principaux (pour ouvrir la popup)
+  const markersRefs = {};
+  // Dictionnaire pour stocker TOUS les marqueurs (siège + antennes) pour les animer
+  const allMarkersRefs = {};
+
+  // Formule Haversine
+  function haversineDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+  }
+
+  function nettoyerNom(str) {
+    return str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/-/g, " ");
+  }
+
+  // 4. Activation de la zone et mise en surbrillance dans le menu + animation des marqueurs
+  function activerStructure(structId) {
+    // Retirer la surbrillance dans le menu
+    document.querySelectorAll('.structure-item').forEach(item => {
+      item.classList.remove('active');
+    });
+
+    // Arrêter l'animation de tous les marqueurs
+    Object.values(allMarkersRefs).forEach(markerArray => {
+      markerArray.forEach(m => {
+        if (m.getElement()) {
+          m.getElement().classList.remove('active-marker');
+        }
+      });
+    });
+
+    // Activer l'élément du menu et l'animation des marqueurs correspondants
+    if (structId) {
+      const activeElement = document.getElementById('item-' + structId);
+      if (activeElement) activeElement.classList.add('active');
+
+      if (allMarkersRefs[structId]) {
+        allMarkersRefs[structId].forEach(m => {
+          if (m.getElement()) {
+            m.getElement().classList.add('active-marker');
+          }
+        });
+      }
+    }
+
+    if (!layerCommunes) return;
+
+    // Centres réels pour les calculs
+    const cormenonLat = 47.969, cormenonLng = 0.894;
+    const bloisLat = 47.586, bloisLng = 1.332;
+    const vendomeLat = 47.793, vendomeLng = 1.066;
+    const vallieresLat = 47.433, vallieresLng = 1.148;
+
+    layerCommunes.eachLayer(layer => {
+      const props = layer.feature.properties;
+      const coords = layer.feature.geometry.coordinates;
+      const nomClean = nettoyerNom(props.nom);
+      
+      let commLng = coords[0][0][0];
+      let commLat = coords[0][0][1];
+      if (Array.isArray(commLng)) {
+        commLng = commLng[0];
+        commLat = commLat[1];
+      }
+
+      let dansZone = false;
+
+      // ---- LOGIQUE TERRITORIALE ----
+      if (structId === 'ACTA VISTA') {
+        dansZone = (nomClean === 'chambord');
+      } else if (structId === 'APHP') {
+        const dist = haversineDistance(cormenonLat, cormenonLng, commLat, commLng);
+        dansZone = (dist <= 30);
+      } else if (structId === 'SNR' || structId === 'BIO SOLIDAIRE' || structId === 'KAIROS') {
+        dansZone = true;
+      } else if (structId === 'ARC41') {
+        const dist = haversineDistance(vallieresLat, vallieresLng, commLat, commLng);
+        dansZone = (dist <= 40); 
+      } else if (structId === 'EUREKA') {
+        const eurekaCenters = [
+          { lat: bloisLat, lng: bloisLng, rayon: 22 }, 
+          { lat: 47.358, lng: 1.746, rayon: 22 }, 
+          { lat: 47.330, lng: 1.400, rayon: 24 }, 
+          { lat: 47.420, lng: 2.050, rayon: 22 }, 
+          { lat: 47.600, lng: 2.020, rayon: 20 }, 
+          { lat: 47.530, lng: 1.800, rayon: 20 }, 
+          { lat: 47.620, lng: 1.550, rayon: 20 }  
+        ];
+
+        let estDansRayonEureka = eurekaCenters.some(c => haversineDistance(c.lat, c.lng, commLat, commLng) <= c.rayon);
+        const estCommuneAgglopolys = (nomClean === 'mesland' || nomClean === 'monteaux' || nomClean === 'saint cyr du gault');
+
+        const communesExcluesEUREKA = [
+          'lance', 'pray', 'villemardy', 'tourailles', 'villeromain', 'selommes',
+          'oucques la nouvelle', 'mulsans', 'villeneuve frouville', 'boisseau',
+          'rhodon', 'conan', 'maves', 'la chapelle saint martin en plaine',
+          'suevres', 'mer', 'courbouzon', 'avaray', 'josnes', 'seris', 'concriers',
+          'talcy', 'la madeleine villefrouin', 'muides sur loire', 'lestiou', 'villexanton',
+          'cour sur loire'
+        ];
+
+        if (communesExcluesEUREKA.includes(nomClean)) {
+          dansZone = false;
+        } else {
+          dansZone = estDansRayonEureka || estCommuneAgglopolys;
+        }
+
+      } else if (structId === 'RQV') {
+        const rqvCenters = [
+          { lat: vendomeLat, lng: vendomeLng, rayon: 21 }, 
+          { lat: 47.980, lng: 0.890, rayon: 18 }, 
+          { lat: 48.020, lng: 0.920, rayon: 18 }  
+        ];
+
+        let estDansRayonRQV = rqvCenters.some(c => haversineDistance(c.lat, c.lng, commLat, commLng) <= c.rayon);
+
+        const communesSpecifiquesRQV = [
+          'ecoman', 'la bosse', 'beauvilliers', 'vievy le raye', 'landes le gaulois', 'ruan sur egvonne',
+          'authon', 'saint martin des bois', 'les hayes', 'ternay', 'montrouveau', 'villedieu le chateau', 
+          'vallee de ronsard', 'les essarts', 'artins', 'souge', 'bonneveau', 'celle', 'saint jacques des guerets', 'troo',
+          'moisy', 'moree', 'ouzouer le doyen', 'brevainville' 
+        ];
+
+        const estCommuneSpecifique = communesSpecifiquesRQV.includes(nomClean);
+
+        const communesExcluesRQV = [
+          'oucques la nouvelle', 'epiais', 'villeneuve frouville', 'rhodon',
+          'conan', 'champigny en beauce', 'villefrancoeur', 'villefrencoeur', 'francay', 'boisseau', 'lancome'
+        ];
+
+        const estCodeExclu = (String(props.code) === '41281');
+
+        if (communesExcluesRQV.includes(nomClean) || estCodeExclu) {
+          dansZone = false;
+        } else {
+          dansZone = estDansRayonRQV || estCommuneSpecifique;
+        }
+
+      } else if (structId === 'LEDA') {
+        const ledaCenter = { lat: 47.330, lng: 1.400, rayon: 24 };
+        let estDansRayonLeda = (haversineDistance(ledaCenter.lat, ledaCenter.lng, commLat, commLng) <= ledaCenter.rayon);
+
+        const communesExcluesLEDA = [
+          'valloire sur cisse', 'chaumont sur loire', 'monthou sur bievre', 'sambin',
+          'cande sur beuvron', 'les montils', 'chailles', 'seur', 'cellettes',
+          'chitenay', 'cormeray', 'cheverny', 'cour cheverny', 'fontaines en sologne',
+          'mur de sologne', 'veilleins', 'pruniers en sologne', 'billy', 'valaire'
+        ];
+
+        if (communesExcluesLEDA.includes(nomClean)) {
+          estDansRayonLeda = false;
+        }
+
+        dansZone = estDansRayonLeda;
+
+      } else if (structId === 'RQB' || structId === 'RESTOS AI ET ACI' || structId === 'ASLD' || structId === 'IDEES INTERIM') {
+        const agglopolysCenter = { lat: bloisLat, lng: bloisLng, rayon: 22 };
+        const estDansRayon = (haversineDistance(agglopolysCenter.lat, agglopolysCenter.lng, commLat, commLng) <= agglopolysCenter.rayon);
+        const estCommuneAgglopolys = (nomClean === 'mesland' || nomClean === 'monteaux' || nomClean === 'saint cyr du gault');
+
+        const communesExcluesAgglopolys = [
+          'cour sur loire', 'lance', 'pray', 'villeromain', 'tourailles',
+          'villemardy', 'selommes', 'oucques la nouvelle', 'talcy', 'boisseau',
+          'villeneuve frouville', 'rhodon', 'conan', 'maves', 'mulsans',
+          'la chapelle saint martin en plaine', 'la chapelle saint martine en plaine',
+          'villexanton', 'la madeleine villefrouin', 'suevres', 'suesmes',
+          'montlivaut', 'montlivault', 'maslives', 'chambord', 'huisseau sur cosson',
+          'mont pres chambord', 'tour en sologne', 'neuvy', 'bracieux',
+          'le controis en sologne', 'fresnes', 'oisly',
+          'saint claude de diray', 'saint dye sur loire', 'muides sur loire',
+          'mer', 'courbouzon', 'avaray'
+        ];
+
+        if (communesExcluesAgglopolys.includes(nomClean)) {
+          dansZone = false;
+        } else {
+          dansZone = estDansRayon || estCommuneAgglopolys;
+        }
+
+      } else if (structId === 'AVADE') {
+        const avadeCenters = [
+          { lat: vendomeLat, lng: vendomeLng, rayon: 21 }, 
+          { lat: 47.980, lng: 0.890, rayon: 18 },          
+          { lat: 48.020, lng: 0.920, rayon: 18 }           
+        ];
+
+        let estDansRayonAvade = avadeCenters.some(c => haversineDistance(c.lat, c.lng, commLat, commLng) <= c.rayon);
+
+        const communesSpecifiquesAVADE = [
+          'savigny sur braye', 'authon', 'saint martin des bois', 'les hayes', 'montrouveau',
+          'villedieu le chateau', 'ternay', 'vallee de ronsard', 'artins', 'souge', 'troo', 'bonneveau', 'celle', 'les essarts',
+          'oucques', 'oucques la nouvelle', 'epiais', 'vievy le raye',
+          'choue', 'la chapelle encherie', 'ruan sur egvonne', 'moree', 'moisy', 'ouzouer le doyen',
+          'sarge sur braye', 'cormenon', 'le temple', 'saint marc du cor', 'saint martin du cor',
+          'beauchene', 'romilly', 'chauvigny du perche', 'fontaine raoul', 'busloup',
+          'saint jean froidmentel', 'saint hilaire la gravelle', 'lisle', 'pezou', 'renay',
+          'lignieres', 'freteval', 'brevainville', 'saint jacques des guerets'
+        ];
+
+        const estCommuneSpecifiqueAVADE = communesSpecifiquesAVADE.includes(nomClean);
+
+        const communesExcluesAVADE = [
+          'villeneuve frouville', 'boisseau', 'rhodon',
+          'francay', 'conan', 'champigny en beauce', 'villefrancoeur', 'villefrencoeur', 'landes le gaulois',
+          'lancome'
+        ];
+
+        const estCodeExclu = (String(props.code) === '41281');
+
+        if (communesExcluesAVADE.includes(nomClean) || estCodeExclu) {
+          dansZone = false;
+        } else {
+          dansZone = estDansRayonAvade || estCommuneSpecifiqueAVADE;
+        }
+
+      } else if (structId === 'ECLAIR ET ETHIC ECLAIR') {
+        const communesExcluesEclair = [
+          'vievy le raye', 'oucques la nouvelle', 'epiais', 'villeneuve frouville', 'boisseau',
+          'rhodon', 'conan', 'maves', 'mulsans', 'cour sur loire', 'muides sur loire', 'courbouzon',
+          'avaray', 'mer', 'seris', 'josnes', 'lorges', 'autainville', 'le plessis l echelle',
+          'le plessis lechelle', 'marchenoir', 'roches', 'saint leonard en beauce',
+          'la madeleine villefrouin', 'la chapelle saint martin en plaine',
+          'suevres', 'villexanton', 'talcy', 'concriers', 'briou', 'lestiou'
+        ];
+
+        const estCodeExcluEclair = (String(props.code) === '41178');
+
+        if (communesExcluesEclair.includes(nomClean) || estCodeExcluEclair) {
+          dansZone = false;
+        } else {
+          const communesInclusesEclair = [
+            'landes le gaulois', 'thoury', 'crouy sur cosson'
+          ];
+
+          if (communesInclusesEclair.includes(nomClean)) {
+            dansZone = true;
+          } else {
+            const vendomoisCenters = [
+              { lat: vendomeLat, lng: vendomeLng, rayon: 21 },
+              { lat: 47.980, lng: 0.890, rayon: 18 },
+              { lat: 48.020, lng: 0.920, rayon: 18 }
+            ];
+            
+            let estVendomois = vendomoisCenters.some(c => haversineDistance(c.lat, c.lng, commLat, commLng) <= c.rayon);
+            
+            const communesSpecifiquesVendomois = [
+              'ecoman', 'la bosse', 'beauvilliers', 'vievy le raye', 'landes le gaulois', 'ruan sur egvonne',
+              'authon', 'saint martin des bois', 'les hayes', 'ternay', 'montrouveau', 'villedieu le chateau', 
+              'vallee de ronsard', 'les essarts', 'artins', 'souge', 'bonneveau', 'celle', 'saint jacques des guerets', 'troo',
+              'moisy', 'moree', 'ouzouer le doyen', 'brevainville', 'savigny sur braye', 'sarge sur braye', 'cormenon', 
+              'le temple', 'saint marc du cor', 'saint martin du cor', 'beauchene', 'romilly', 'chauvigny du perche', 
+              'fontaine raoul', 'busloup', 'saint jean froidmentel', 'saint hilaire la gravelle', 'lisle', 'pezou', 
+              'renay', 'lignieres', 'freteval', 'choue', 'la chapelle encherie'
+            ];
+            
+            if (communesSpecifiquesVendomois.includes(nomClean)) {
+              estVendomois = true;
+            }
+
+            const communesExcluesVendomois = [
+              'oucques', 'oucques la nouvelle', 'epiais', 'villeneuve frouville', 'rhodon',
+              'conan', 'champigny en beauce', 'villefrancoeur', 'villefrencoeur', 'francay', 'boisseau', 'lancome'
+            ];
+            
+            const estCodeExcluVendomois = (String(props.code) === '41281');
+            
+            if (communesExcluesVendomois.includes(nomClean) || estCodeExcluVendomois) {
+              estVendomois = false;
+            }
+
+            const communesBeauceTerresValDeLoire = [
+              'avaray', 'la chapelle saint martin en plaine', 'concriers', 'courbouzon', 'cour sur loire',
+              'crouy sur cosson', 'josnes', 'lestiou', 'lorges', 'maves', 'mer', 'muides sur loire',
+              'mulsans', 'roches', 'saint leonard en beauce', 'seris', 'suevres', 'talcy', 'thoury', 'villexanton',
+              'beauce la romaine', 'binas', 'saint laurent des bois', 'villermain'
+            ];
+
+            if (estVendomois || communesBeauceTerresValDeLoire.includes(nomClean)) {
+              dansZone = false;
+            } else {
+              dansZone = true;
+            }
+          }
+        }
+      }
+      // ---- FIN LOGIQUE TERRITORIALE ----
+
+      if (dansZone) {
+        layer.setStyle(stylesStructures[structId]);
+        layer.bringToFront();
+      } else {
+        layer.setStyle(styleBaseFonce);
+      }
+    });
+  }
+
+  function reinitialiser() {
+    // Retirer la surbrillance du menu
+    document.querySelectorAll('.structure-item').forEach(item => {
+      item.classList.remove('active');
+    });
+
+    // Arrêter l'animation de tous les marqueurs
+    Object.values(allMarkersRefs).forEach(markerArray => {
+      markerArray.forEach(m => {
+        if (m.getElement()) {
+          m.getElement().classList.remove('active-marker');
+        }
+      });
+    });
+
+    if (layerCommunes) {
+      layerCommunes.setStyle(styleBaseFonce);
+    }
+  }
+
+  // 5. Chargement des contours officiels des communes
+  fetch('https://geo.api.gouv.fr/departements/41/communes?geometry=contour&format=geojson')
+    .then(response => response.json())
+    .then(geojsonData => {
+
+      layerCommunes = L.geoJSON(geojsonData, {
+        style: styleBaseFonce,
+        onEachFeature: (feature, layer) => {
+          layer.bindPopup(`<b>${feature.properties.nom}</b><br>Code INSEE : ${feature.properties.code}`);
+        }
+      }).addTo(map);
+
+      map.fitBounds(layerCommunes.getBounds());
+
+      // 6. Placement des marqueurs SVG custom et génération du menu latéral
+      structures.forEach(struct => {
+        allMarkersRefs[struct.id] = [];
+        const color = stylesStructures[struct.id].fillColor;
+
+        // --- Ajout au menu latéral ---
+        const listItem = document.createElement('li');
+        listItem.className = 'structure-item';
+        listItem.id = 'item-' + struct.id;
+        
+        listItem.innerHTML = `
+          <div class="color-dot" style="background-color: ${color};"></div>
+          <div class="structure-info">
+            <span class="structure-name">${struct.nom}</span>
+            <span class="structure-city">${struct.implantation}</span>
+          </div>
+        `;
+        
+        listItem.addEventListener('click', (e) => {
+          e.stopPropagation();
+          activerStructure(struct.id);
+          if (markersRefs[struct.id]) {
+            markersRefs[struct.id].openPopup();
+          }
+        });
+        listContainer.appendChild(listItem);
+
+
+        // --- Ajouter le marqueur (Goutte/Pin) sur la carte ---
+        const marker = L.marker([struct.lat, struct.lng], { icon: createMainSvgIcon(color, 1) }).addTo(map);
+        markersRefs[struct.id] = marker;
+        allMarkersRefs[struct.id].push(marker); // Ajout pour l'animation
+
+        marker.bindTooltip(`<b>${struct.nom}</b>`, {
+          permanent: false,
+          direction: 'top',
+          offset: [0, -15]
+        });
+
+        let popupContent = `
+          <b>${struct.nom}</b><br>
+          <b>Siège :</b> ${struct.implantation}<br>
+          <div class="popup-zone-texte"><b>Zone d'intervention :</b> ${struct.zoneTxt}</div>
+        `;
+        if (struct.antennes.length > 0) {
+          popupContent += `<br><b>Antennes :</b> ${struct.antennes.map(a => a.ville).join(', ')}`;
+        }
+        marker.bindPopup(popupContent);
+
+        marker.on('click', (e) => {
+          e.originalEvent.stopPropagation();
+          activerStructure(struct.id);
+        });
+
+        // --- Marqueurs des antennes (Carré) ---
+        struct.antennes.forEach(antenne => {
+          const antMarker = L.marker([antenne.lat, antenne.lng], { icon: createAntenneSvgIcon(color, 1) }).addTo(map);
+          allMarkersRefs[struct.id].push(antMarker); // Ajout pour l'animation
+
+          antMarker.bindTooltip(`<b>${antenne.nom}</b>`, {
+            permanent: false,
+            direction: 'top',
+            offset: [0, -12]
+          });
+
+          antMarker.bindPopup(`
+            <b>${antenne.nom}</b><br>
+            <b>Siège principal :</b> ${struct.nom} (${struct.implantation})<br>
+            <div class="popup-zone-texte"><b>Zone d'intervention :</b> ${struct.zoneTxt}</div>
+          `);
+
+          antMarker.on('click', (e) => {
+            e.originalEvent.stopPropagation();
+            activerStructure(struct.id);
+          });
+        });
+      });
+    });
+
+  // Clic dans le vide sur la carte -> réinitialise tout
+  map.on('click', () => {
+    reinitialiser();
+  });
+</script>
+</body>
+</html>
